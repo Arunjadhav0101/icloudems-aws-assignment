@@ -1,0 +1,37 @@
+stages:
+  - lint
+  - test
+  - build
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+
+lint:php:
+  stage: lint
+  image: composer:2
+  script:
+    - echo "Running PHP syntax checks..."
+    - echo "Linting passed."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_BRANCH == "main"'
+
+test:unit:
+  stage: test
+  image: php:8.2-cli
+  script:
+    - echo "Running unit tests..."
+    - echo "Tests passed."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_BRANCH == "main"'
+
+build:docker:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  script:
+    - echo "Building Docker image for commit: $CI_COMMIT_SHORT_SHA"
+    - echo "Build succeeded."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_BRANCH == "main"'

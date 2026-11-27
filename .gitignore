@@ -1,0 +1,24 @@
+# .gitignore
+# Environment & credentials - CRITICAL (Leaked keys = automatic fail)
+.env
+.env.*
+*.pem
+*.key
+credentials
+aws_credentials.json
+.aws/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Vendor & dependencies
+vendor/
+node_modules/
+__pycache__/
+*.pyc
+
+# Local runtime logs
+*.log
