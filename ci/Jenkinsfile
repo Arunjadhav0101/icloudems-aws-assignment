@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION      = 'ap-south-1'
+        AWS_ACCOUNT_ID  = credentials('aws-account-id')
+        ECR_REPO_NAME   = 'icloudems-erp'
+        ASG_NAME        = 'icloudems-erp-asg'
+        IMAGE_TAG       = "${env.GIT_COMMIT.take(8)}"
+        ECR_REGISTRY    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo "1. Checking out latest source code from repository..."
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo "2. Building Docker image with commit SHA tag: ${IMAGE_TAG}..."
+                sh """
+                    docker build -t ${ECR_REPO_NAME}:${IMAGE_TAG} -f docker/Dockerfile .
+                    docker tag ${ECR_REPO_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}
+                    docker tag ${ECR_REPO_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest
+                """
+            }
+        }
+
+        stage('Push to Amazon ECR') {
+            steps {
+                echo "3. Authenticating with Amazon ECR and pushing image..."
+                // Uses IAM instance profile on Jenkins EC2 or Jenkins AWS Credentials
+                sh """
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                    docker push ${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}
+                    docker push ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest
+                """
+            }
+        }
+
+        stage('Deploy (ASG Instance Refresh)') {
+            steps {
+                echo "4. Triggering zero-downtime Instance Refresh on ASG: ${ASG_NAME}..."
+                sh """
+                    aws autoscaling start-instance-refresh \
+                        --auto-scaling-group-name ${ASG_NAME} \
+                        --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 300}' \
+                        --region ${AWS_REGION}
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully! New image deployed."
+        }
+        failure {
+            echo "Pipeline failed! Sending notification alert..."
+            // Send alert via Slack / Webhook / Email without hardcoding tokens
+            // slackSend(channel: '#devops-alerts', color: 'danger', message: "Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}")
+        }
+        always {
+            // Clean up local images to avoid exhausting Jenkins runner disk
+            sh "docker image prune -f || true"
+        }
+    }
+}
